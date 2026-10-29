@@ -1,0 +1,843 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Snake - 4 jugadores</title>
+<style>
+  html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#ffffff;
+            font-family:system-ui,-apple-system,Segoe UI,sans-serif;}
+  canvas{display:block;}
+
+  #scoreboard{
+    position:fixed;top:12px;left:50%;transform:translateX(-50%);
+    display:flex;gap:26px;z-index:6;
+    padding:8px 22px;border-radius:10px;
+    background:rgba(255,255,255,.94);border:1px solid #e3e7ee;
+    box-shadow:0 2px 8px rgba(0,0,0,.08);
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+    font-size:16px;font-weight:600;color:#111;letter-spacing:.04em;
+    user-select:none;
+  }
+  .sb-item{display:flex;align-items:center;gap:8px;min-width:58px;}
+  .sb-item b{min-width:30px;text-align:right;}
+  .sb-dot{width:13px;height:13px;border-radius:3px;flex:0 0 auto;
+          box-shadow:inset 0 0 0 1px rgba(0,0,0,.18);}
+
+  #overlay{position:fixed;inset:0;z-index:10;display:flex;flex-direction:column;
+           align-items:center;justify-content:center;gap:18px;
+           background:rgba(255,255,255,.97);color:#111;text-align:center;line-height:1.7}
+  #overlay h1{margin:0;font-size:30px;font-weight:600;letter-spacing:.12em}
+  #overlay p{margin:0;font-size:14px;color:#666;letter-spacing:.05em}
+
+  #levels{display:flex;gap:18px;margin-top:10px;flex-wrap:wrap;justify-content:center}
+  .lvl-btn{
+    padding:16px 30px;font-size:16px;font-weight:700;letter-spacing:.10em;
+    border-radius:12px;border:2px solid #ccc;background:#fff;color:#111;
+    cursor:pointer;transition:all .15s;font-family:inherit;
+    min-width:150px;line-height:1.2;
+  }
+  .lvl-btn small{display:block;font-size:11px;font-weight:500;
+    color:#999;letter-spacing:.06em;margin-top:4px}
+  .lvl-btn:hover{transform:translateY(-2px)}
+  .lvl-btn[data-score="111"]{border-color:#14d44a;color:#14d44a}
+  .lvl-btn[data-score="111"]:hover{background:#14d44a;color:#fff;
+    box-shadow:0 6px 16px rgba(20,212,74,.3)}
+  .lvl-btn[data-score="111"]:hover small{color:rgba(255,255,255,.85)}
+  .lvl-btn[data-score="333"]{border-color:#2f6bff;color:#2f6bff}
+  .lvl-btn[data-score="333"]:hover{background:#2f6bff;color:#fff;
+    box-shadow:0 6px 16px rgba(47,107,255,.3)}
+  .lvl-btn[data-score="333"]:hover small{color:rgba(255,255,255,.85)}
+  .lvl-btn[data-score="999"]{border-color:#ff2222;color:#ff2222}
+  .lvl-btn[data-score="999"]:hover{background:#ff2222;color:#fff;
+    box-shadow:0 6px 16px rgba(255,34,34,.3)}
+  .lvl-btn[data-score="999"]:hover small{color:rgba(255,255,255,.85)}
+
+  #legend{display:flex;gap:26px;font-size:15px;color:#333;margin-top:14px;
+          flex-wrap:wrap;justify-content:center;font-weight:600;letter-spacing:.04em;
+          font-family:ui-monospace,SFMono-Regular,Menlo,monospace;}
+  #legend span{display:flex;align-items:center;gap:8px}
+  .dot{width:12px;height:12px;border-radius:2px;display:inline-block;
+       border:1px solid #cfd5df}
+
+  #gameoverOverlay{position:fixed;inset:0;z-index:11;display:none;
+                   flex-direction:column;align-items:center;justify-content:center;
+                   gap:18px;background:rgba(255,255,255,.97);color:#111;
+                   text-align:center;line-height:1.8}
+  #gameoverOverlay h1{margin:0;font-size:40px;font-weight:800;letter-spacing:.14em;
+                       color:#e000c0}
+  #winnerText{margin:0;font-size:24px;font-weight:700;letter-spacing:.1em}
+  #winnerLevel{margin:0;font-size:14px;color:#888;letter-spacing:.12em;
+               text-transform:uppercase}
+  #winnerScore{margin:0;font-size:16px;color:#666;letter-spacing:.08em;
+               font-family:ui-monospace,SFMono-Regular,Menlo,monospace;}
+  #gameoverOverlay .countdown{margin:0;font-size:14px;color:#666}
+  #gameoverOverlay .countdown b{color:#e000c0;font-weight:700}
+</style>
+</head>
+<body>
+
+<div id="scoreboard">
+  <div class="sb-item"><i class="sb-dot" style="background:#000"></i><b id="sc1">0</b></div>
+  <div class="sb-item"><i class="sb-dot" style="background:#ff2222"></i><b id="sc2">0</b></div>
+  <div class="sb-item"><i class="sb-dot" style="background:#2f6bff"></i><b id="sc3">0</b></div>
+  <div class="sb-item"><i class="sb-dot" style="background:#14d44a"></i><b id="sc4">0</b></div>
+</div>
+
+<div id="overlay">
+  <h1>Snake - 4 jugadores</h1>
+  <p>Selecciona el nivel para comenzar</p>
+  <div id="levels">
+    <button class="lvl-btn" data-score="111">
+      CORTO
+      <small>límite 111 puntos</small>
+    </button>
+    <button class="lvl-btn" data-score="333">
+      MEDIO
+      <small>límite 333 puntos</small>
+    </button>
+    <button class="lvl-btn" data-score="999">
+      EXTENSO
+      <small>límite 999 puntos</small>
+    </button>
+  </div>
+  <div id="legend">
+    <span><i class="dot" style="background:#000"></i>NEGRA</span>
+    <span><i class="dot" style="background:#ff2222"></i>ROJA</span>
+    <span><i class="dot" style="background:#2f6bff"></i>AZUL</span>
+    <span><i class="dot" style="background:#14d44a"></i>VERDE</span>
+  </div>
+</div>
+
+<div id="gameoverOverlay">
+  <h1>¡GANADOR!</h1>
+  <p id="winnerText">LA CULEBRA</p>
+  <p id="winnerLevel">NIVEL</p>
+  <p id="winnerScore">Puntuación: 999</p>
+  <p class="countdown">Volviendo al inicio en <b id="countdown">10</b>s…</p>
+</div>
+
+<script type="importmap">
+{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+
+/* =========================================================
+   CONFIGURACIÓN
+   ========================================================= */
+const BW = 45;
+const BH = 80;
+const SCALE = 16;
+const WORLD_W = BW * SCALE;
+const WORLD_H = BH * SCALE;
+const MARGIN_PX = 80;
+
+const STEP_MS       = 160;
+const MIN_STEP_MS   = 2;
+const SPEED_FACTOR  = 1.1;   // ← boost único al entrar en modo ganador
+const SHRINK_MS     = 80;
+
+const START_LEN     = 4;
+const GROW_AMOUNT   = 1;     // ← +1 píxel al tamaño por punto
+const FOOD_SIZE     = 1;
+const MAX_SEG       = BW * BH;
+const RESPAWN_DELAY = 350;
+const BFS_EVERY     = 1;
+
+/* Comida en modo normal: arranca 128, +1 neto por punto, SIN tope/reinicio */
+const INITIAL_FOODS = 128;
+const SPAWN_PER_EAT = 2;     // +2 spawn −1 comido = +1 neto
+
+let WIN_SCORE        = 999;
+let currentLevelName = 'EXTENSO';
+const GAMEOVER_MS    = 10000;
+
+const NOTE = {
+  C3: 130.81, G3: 196.00,
+  D4: 293.66, A4: 440.00,
+  E4: 329.63, C5: 523.25,
+  G5: 783.99, A5: 880.00
+};
+
+const SNAKE_CFG = [
+  { id:1, name:'NEGRA', color:0x000000, right:NOTE.C3, left:NOTE.G3 },
+  { id:2, name:'ROJA',  color:0xff2222, right:NOTE.D4, left:NOTE.A4 },
+  { id:3, name:'AZUL',  color:0x2f6bff, right:NOTE.E4, left:NOTE.C5 },
+  { id:4, name:'VERDE', color:0x14d44a, right:NOTE.G5, left:NOTE.A5 }
+];
+
+const DIRS = [ {x:1,y:0}, {x:-1,y:0}, {x:0,y:1}, {x:0,y:-1} ];
+
+/* =========================================================
+   ESTADO
+   ========================================================= */
+let gameState     = 'menu';
+let winnerSnake   = null;
+let gameOverStart = 0;
+let currentStepMs = STEP_MS;
+
+/* =========================================================
+   AUDIO
+   ========================================================= */
+let actx = null, master = null;
+
+function initAudio(){
+  if (actx) return;
+  actx = new (window.AudioContext || window.webkitAudioContext)();
+  master = actx.createGain();
+  master.gain.value = 0.55;
+  master.connect(actx.destination);
+}
+
+function playNote(freq){
+  if (!actx || actx.state !== 'running') return;
+  const t0   = actx.currentTime;
+  const osc  = actx.createOscillator();
+  const gain = actx.createGain();
+  osc.type = 'triangle';
+  osc.frequency.setValueAtTime(freq, t0);
+  const dur = 0.22;
+  gain.gain.setValueAtTime(0.0001, t0);
+  gain.gain.exponentialRampToValueAtTime(0.30, t0 + 0.010);
+  gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  osc.connect(gain).connect(master);
+  osc.start(t0);
+  osc.stop(t0 + dur + 0.05);
+}
+
+/* =========================================================
+   ESCENA
+   ========================================================= */
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xffffff);
+
+const renderer = new THREE.WebGLRenderer({ antialias:true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+document.body.appendChild(renderer.domElement);
+
+const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 1000);
+
+function resize(){
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  renderer.setSize(vw, vh);
+
+  const availH = Math.max(120, vh - MARGIN_PX * 2);
+  const scale  = availH / WORLD_H;
+  const viewW  = vw / scale;
+  const viewH  = vh / scale;
+
+  camera.left   = -viewW / 2;
+  camera.right  =  viewW / 2;
+  camera.top    =  viewH / 2;
+  camera.bottom = -viewH / 2;
+  camera.position.set(WORLD_W / 2, WORLD_H / 2, 500);
+  camera.lookAt(WORLD_W / 2, WORLD_H / 2, 0);
+  camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', resize);
+resize();
+
+const frame = new THREE.Mesh(
+  new THREE.PlaneGeometry(WORLD_W + 4, WORLD_H + 4),
+  new THREE.MeshBasicMaterial({ color:0xe3e7ee })
+);
+frame.position.set(WORLD_W/2, WORLD_H/2, -2);
+scene.add(frame);
+
+const field = new THREE.Mesh(
+  new THREE.PlaneGeometry(WORLD_W, WORLD_H),
+  new THREE.MeshBasicMaterial({ color:0xffffff })
+);
+field.position.set(WORLD_W/2, WORLD_H/2, -1);
+scene.add(field);
+
+/* =========================================================
+   REJILLAS
+   ========================================================= */
+const grid     = new Uint8Array(BW * BH);
+const foodGrid = new Uint8Array(BW * BH);
+const idx = (x,y) => y * BW + x;
+const inBounds = (x,y) => x >= 0 && x < BW && y >= 0 && y < BH;
+const cellFree = (x,y) => inBounds(x,y) && grid[idx(x,y)] === 0;
+const cellFreeForFood = (x,y) =>
+  cellFree(x,y) && foodGrid[idx(x,y)] === 0;
+
+/* =========================================================
+   COMIDA
+   ========================================================= */
+const foods = [];
+const foodGeo = new THREE.PlaneGeometry(FOOD_SIZE * SCALE, FOOD_SIZE * SCALE);
+
+function relocateFood(f){
+  if (f.x >= 0 && f.x < BW && f.y >= 0 && f.y < BH){
+    foodGrid[idx(f.x, f.y)] = 0;
+  }
+  for (let i = 0; i < 500; i++){
+    const x = 2 + Math.floor(Math.random() * (BW - 4));
+    const y = 2 + Math.floor(Math.random() * (BH - 4));
+    if (cellFreeForFood(x, y)){
+      f.x = x; f.y = y;
+      f.mesh.position.set((x + 0.5) * SCALE, (y + 0.5) * SCALE, 1);
+      foodGrid[idx(x, y)] = 1;
+      return true;
+    }
+  }
+  return false;
+}
+
+function spawnFood(){
+  const mat = new THREE.MeshBasicMaterial({
+    color: 0xff00ff, transparent:true, opacity:1, depthWrite:false
+  });
+  const mesh = new THREE.Mesh(foodGeo, mat);
+  const f = { x:-1, y:-1, mesh, phase: Math.random() * Math.PI * 2 };
+  if (!relocateFood(f)){
+    mat.dispose();
+    return null;
+  }
+  scene.add(mesh);
+  foods.push(f);
+  return f;
+}
+
+function createFoods(){
+  for (let i = 0; i < INITIAL_FOODS; i++) spawnFood();
+}
+
+function foodAt(x, y){
+  for (const f of foods){
+    if (f.x === x && f.y === y) return f;
+  }
+  return null;
+}
+
+function onFoodEaten(f){
+  const i = foods.indexOf(f);
+  if (i >= 0) foods.splice(i, 1);
+  scene.remove(f.mesh);
+  f.mesh.material.dispose();
+  if (f.x >= 0 && f.x < BW && f.y >= 0 && f.y < BH){
+    foodGrid[idx(f.x, f.y)] = 0;
+  }
+
+  if (gameState === 'winner'){
+    /* Modo ganador: la comida se DUPLICA por cada punto */
+    const n = foods.length;
+    for (let k = 0; k < n; k++){
+      if (!spawnFood()) break;
+    }
+  } else {
+    /* Modo normal: +2 por comer (−1 comido) = +1 neto, SIN reinicio */
+    for (let k = 0; k < SPAWN_PER_EAT; k++) spawnFood();
+  }
+}
+
+/* =========================================================
+   BFS
+   ========================================================= */
+const distField = new Int32Array(BW * BH);
+const bfsQueue  = new Int32Array(BW * BH);
+
+function computeDistField(){
+  distField.fill(-1);
+  let qh = 0, qt = 0;
+
+  for (const f of foods){
+    if (!inBounds(f.x, f.y)) continue;
+    const c = f.y * BW + f.x;
+    if (grid[c] !== 0) continue;
+    if (distField[c] === -1){
+      distField[c] = 0;
+      bfsQueue[qt++] = c;
+    }
+  }
+
+  while (qh < qt){
+    const c = bfsQueue[qh++];
+    const cx = c % BW;
+    const cy = (c - cx) / BW;
+    const nd = distField[c] + 1;
+
+    if (cx > 0){
+      const nc = c - 1;
+      if (grid[nc] === 0 && distField[nc] === -1){ distField[nc] = nd; bfsQueue[qt++] = nc; }
+    }
+    if (cx < BW - 1){
+      const nc = c + 1;
+      if (grid[nc] === 0 && distField[nc] === -1){ distField[nc] = nd; bfsQueue[qt++] = nc; }
+    }
+    if (cy > 0){
+      const nc = c - BW;
+      if (grid[nc] === 0 && distField[nc] === -1){ distField[nc] = nd; bfsQueue[qt++] = nc; }
+    }
+    if (cy < BH - 1){
+      const nc = c + BW;
+      if (grid[nc] === 0 && distField[nc] === -1){ distField[nc] = nd; bfsQueue[qt++] = nc; }
+    }
+  }
+}
+
+/* =========================================================
+   CLASE CULEBRA
+   ========================================================= */
+const segGeo = new THREE.PlaneGeometry(SCALE, SCALE);
+
+class Snake {
+  constructor(cfg){
+    this.id        = cfg.id;
+    this.name      = cfg.name;
+    this.color     = cfg.color;
+    this.rightFreq = cfg.right;
+    this.leftFreq  = cfg.left;
+
+    this.score = 0;
+
+    const mat = new THREE.MeshBasicMaterial({ color: cfg.color });
+    this.mesh = new THREE.InstancedMesh(segGeo, mat, MAX_SEG);
+    this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.mesh.frustumCulled = false;
+    this.mesh.count = 0;
+    scene.add(this.mesh);
+
+    this.cells       = [];
+    this.dir         = { x:1, y:0 };
+    this.pendingGrow = 0;
+    this.state       = 'respawning';
+    this.deathTimer  = 0;
+    this.crashPos    = null;    // ← última posición y dirección del choque
+    this._m          = new THREE.Matrix4();
+
+    this.spawn();
+  }
+
+  spawn(){
+    // Limpiar celdas antiguas
+    for (const c of this.cells){
+      if (inBounds(c.x, c.y)) grid[idx(c.x, c.y)] = 0;
+    }
+    this.cells.length = 0;
+
+    // 1) Intentar reaparecer en el MISMO lugar del choque
+    if (this.crashPos){
+      const cp = this.crashPos;
+
+      // Comprobar que el cuerpo cabe extendido hacia atrás (-cp.dir)
+      let bodyFits = true;
+      for (let i = 0; i < START_LEN; i++){
+        const x = cp.x - cp.dir.x * i;
+        const y = cp.y - cp.dir.y * i;
+        if (!inBounds(x, y) || grid[idx(x, y)] !== 0 || foodGrid[idx(x, y)] !== 0){
+          bodyFits = false; break;
+        }
+      }
+
+      // Buscar dirección segura hacia adelante (sin revertir)
+      let forwardDir = null;
+      const candidates = [cp.dir];
+      for (const d of DIRS){
+        if (d.x !== -cp.dir.x || d.y !== -cp.dir.y) candidates.push(d);
+      }
+      for (const d of candidates){
+        const nx = cp.x + d.x;
+        const ny = cp.y + d.y;
+        if (inBounds(nx, ny) && grid[idx(nx, ny)] === 0){
+          forwardDir = d; break;
+        }
+      }
+
+      if (bodyFits && forwardDir){
+        this.dir = { x: forwardDir.x, y: forwardDir.y };
+        for (let i = 0; i < START_LEN; i++){
+          const x = cp.x - cp.dir.x * i;
+          const y = cp.y - cp.dir.y * i;
+          this.cells.push({ x, y });
+          grid[idx(x, y)] = this.id;
+        }
+        this.pendingGrow = 0;
+        this.state       = 'alive';
+        this.crashPos    = null;
+        return;
+      }
+    }
+
+    // 2) Fallback: spawn aleatorio
+    let hx = BW/2, hy = BH/2, dx = 0, dy = 1;
+
+    for (let t = 0; t < 800; t++){
+      hx = 4 + Math.floor(Math.random() * (BW - 8));
+      hy = 4 + Math.floor(Math.random() * (BH - 8));
+      const pick = DIRS[Math.floor(Math.random() * 4)];
+      dx = pick.x; dy = pick.y;
+
+      let ok = true;
+      for (let i = 0; i < START_LEN + 6; i++){
+        const cx = hx - dx*i, cy = hy - dy*i;
+        if (!inBounds(cx, cy)) { ok = false; break; }
+        if (grid[idx(cx, cy)] !== 0) { ok = false; break; }
+        if (foodGrid[idx(cx, cy)] !== 0) { ok = false; break; }
+      }
+      if (ok) break;
+    }
+
+    this.dir = { x:dx, y:dy };
+
+    for (let i = 0; i < START_LEN; i++){
+      const x = hx - dx*i, y = hy - dy*i;
+      if (!inBounds(x, y)) break;
+      this.cells.push({ x, y });
+      grid[idx(x, y)] = this.id;
+    }
+
+    this.pendingGrow = 0;
+    this.state       = 'alive';
+  }
+
+  decide(){
+    const head = this.cells[0];
+    if (!head) return;
+
+    let bestDir  = null;
+    let bestDist = Infinity;
+
+    for (const d of DIRS){
+      const nx = head.x + d.x;
+      const ny = head.y + d.y;
+      if (!inBounds(nx, ny)) continue;
+      const nc = ny * BW + nx;
+      if (grid[nc] !== 0) continue;
+      const dd = distField[nc];
+      if (dd < 0) continue;
+
+      const isCur = (d.x === this.dir.x && d.y === this.dir.y);
+      if (dd < bestDist || (dd === bestDist && isCur)){
+        bestDist = dd;
+        bestDir  = d;
+      }
+    }
+
+    if (!bestDir){
+      if (cellFree(head.x + this.dir.x, head.y + this.dir.y)){
+        bestDir = this.dir;
+      } else {
+        for (const d of DIRS){
+          if (cellFree(head.x + d.x, head.y + d.y)){ bestDir = d; break; }
+        }
+      }
+    }
+
+    if (!bestDir) return;
+
+    if (bestDir.x !== this.dir.x || bestDir.y !== this.dir.y){
+      this.turnTo(bestDir);
+    }
+  }
+
+  turnTo(d){
+    const cross = this.dir.x * d.y - this.dir.y * d.x;
+    if (cross < 0)      playNote(this.rightFreq);
+    else if (cross > 0) playNote(this.leftFreq);
+    this.dir = { x:d.x, y:d.y };
+  }
+
+  advance(){
+    const head = this.cells[0];
+    const nx = head.x + this.dir.x;
+    const ny = head.y + this.dir.y;
+
+    if (!inBounds(nx, ny) || grid[idx(nx, ny)] !== 0){
+      this.die();
+      return;
+    }
+
+    this.cells.unshift({ x:nx, y:ny });
+    grid[idx(nx, ny)] = this.id;
+
+    const f = foodAt(nx, ny);
+    if (f){
+      this.score++;
+
+      // +1 al tamaño por punto (sin tope en modo ganador)
+      if (gameState === 'winner'){
+        this.pendingGrow += GROW_AMOUNT;
+      } else {
+        this.pendingGrow = Math.min(this.pendingGrow + GROW_AMOUNT, 100);
+      }
+
+      // Activación de modo ganador → boost único 1.1× de velocidad
+      if (gameState === 'playing' && this.score >= WIN_SCORE){
+        activateWinnerMode(this);
+      }
+
+      onFoodEaten(f);
+    }
+
+    if (this.pendingGrow > 0 && this.cells.length < MAX_SEG){
+      this.pendingGrow--;
+    } else {
+      const t = this.cells.pop();
+      grid[idx(t.x, t.y)] = 0;
+    }
+  }
+
+  die(){
+    if (this.state !== 'alive') return;
+    this.state = 'dying';
+
+    // Guardar posición del choque para reaparecer allí
+    const head = this.cells[0];
+    if (head){
+      this.crashPos = {
+        x: head.x, y: head.y,
+        dir: { x: this.dir.x, y: this.dir.y }
+      };
+    }
+
+    if (gameState === 'winner' && this === winnerSnake){
+      gameState = 'gameover';
+      gameOverStart = performance.now();
+      showGameOver();
+    }
+  }
+
+  shrink(){
+    if (this.state !== 'dying') return;
+
+    const n = Math.max(1, Math.ceil(this.cells.length / 8));
+
+    for (let i = 0; i < n; i++){
+      if (this.cells.length > 1){
+        const t = this.cells.pop();
+        grid[idx(t.x, t.y)] = 0;
+      } else {
+        if (this.cells.length === 1){
+          const t = this.cells[0];
+          grid[idx(t.x, t.y)] = 0;
+          this.cells.pop();
+        }
+        this.state = (gameState === 'gameover') ? 'gone' : 'respawning';
+        this.deathTimer = 0;
+        return;
+      }
+    }
+  }
+
+  updateMesh(){
+    const n = Math.min(this.cells.length, MAX_SEG);
+    const m = this._m;
+    for (let i = 0; i < n; i++){
+      const c = this.cells[i];
+      m.makeTranslation((c.x + 0.5) * SCALE, (c.y + 0.5) * SCALE, 0);
+      this.mesh.setMatrixAt(i, m);
+    }
+    this.mesh.count = n;
+    this.mesh.instanceMatrix.needsUpdate = true;
+  }
+}
+
+/* =========================================================
+   INICIALIZACIÓN + RESET
+   ========================================================= */
+let snakes = [];
+
+function buildGame(){
+  createFoods();
+  snakes = SNAKE_CFG.map(cfg => new Snake(cfg));
+  updateScoreboard();
+}
+
+function resetGame(){
+  gameoverOverlay.style.display = 'none';
+
+  for (const s of snakes){
+    scene.remove(s.mesh);
+    s.mesh.material.dispose();
+  }
+  snakes = [];
+
+  for (const f of foods){
+    scene.remove(f.mesh);
+    f.mesh.material.dispose();
+  }
+  foods.length = 0;
+
+  grid.fill(0);
+  foodGrid.fill(0);
+
+  buildGame();
+
+  gameState     = 'menu';
+  winnerSnake   = null;
+  currentStepMs = STEP_MS;
+  moveAcc       = 0;
+  shrinkAcc     = 0;
+  stepCount     = 0;
+  lastT         = performance.now();
+
+  overlay.style.display = 'flex';
+}
+
+/* =========================================================
+   MODO GANADOR (boost ÚNICO ×1.1)
+   ========================================================= */
+function activateWinnerMode(snake){
+  gameState   = 'winner';
+  winnerSnake = snake;
+
+  // Boost único de velocidad al terminar la fase normal
+  currentStepMs = Math.max(MIN_STEP_MS, currentStepMs / SPEED_FACTOR);
+
+  // Eliminar rivales
+  for (const s of snakes){
+    if (s === snake) continue;
+    for (const c of s.cells){
+      if (inBounds(c.x, c.y)) grid[idx(c.x, c.y)] = 0;
+    }
+    s.cells.length = 0;
+    s.state = 'gone';
+  }
+}
+
+/* =========================================================
+   GAME OVER
+   ========================================================= */
+const gameoverOverlay = document.getElementById('gameoverOverlay');
+const winnerTextEl    = document.getElementById('winnerText');
+const winnerLevelEl   = document.getElementById('winnerLevel');
+const winnerScoreEl   = document.getElementById('winnerScore');
+const countdownEl     = document.getElementById('countdown');
+
+function showGameOver(){
+  const hex = '#' + winnerSnake.color.toString(16).padStart(6, '0');
+  winnerTextEl.textContent  = `LA CULEBRA ${winnerSnake.name} GANA`;
+  winnerTextEl.style.color  = hex;
+  winnerLevelEl.textContent = `NIVEL ${currentLevelName}`;
+  winnerScoreEl.textContent = `Puntuación final: ${winnerSnake.score}  ·  Longitud: ${winnerSnake.cells.length}`;
+  countdownEl.textContent   = '10';
+  gameoverOverlay.style.display = 'flex';
+}
+
+/* =========================================================
+   MARCADOR
+   ========================================================= */
+const scoreEls = [
+  document.getElementById('sc1'),
+  document.getElementById('sc2'),
+  document.getElementById('sc3'),
+  document.getElementById('sc4')
+];
+
+function updateScoreboard(){
+  for (let i = 0; i < snakes.length; i++){
+    scoreEls[i].textContent = snakes[i].score;
+  }
+}
+
+/* =========================================================
+   ARRANQUE
+   ========================================================= */
+buildGame();
+
+/* =========================================================
+   MENÚ DE NIVELES
+   ========================================================= */
+const overlay = document.getElementById('overlay');
+const levelBtns = document.querySelectorAll('.lvl-btn');
+
+levelBtns.forEach(btn => {
+  btn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    if (gameState !== 'menu') return;
+
+    WIN_SCORE        = parseInt(btn.dataset.score, 10);
+    currentLevelName = btn.childNodes[0].textContent.trim();
+
+    initAudio();
+    if (actx.state === 'suspended') await actx.resume();
+
+    overlay.style.display = 'none';
+    gameState = 'playing';
+    currentStepMs = STEP_MS;
+    lastT = performance.now();
+  });
+});
+
+/* =========================================================
+   BUCLE
+   ========================================================= */
+let lastT     = performance.now();
+let moveAcc   = 0;
+let shrinkAcc = 0;
+let stepCount = 0;
+
+function loop(now){
+  requestAnimationFrame(loop);
+
+  const dt = Math.min(now - lastT, 100);
+  lastT = now;
+  const tsec = now / 1000;
+
+  if (gameState === 'playing' || gameState === 'winner'){
+    moveAcc += dt;
+    let guard = 0;
+    while (moveAcc >= currentStepMs && guard++ < 64){
+      moveAcc -= currentStepMs;
+
+      if (stepCount % BFS_EVERY === 0) computeDistField();
+      stepCount++;
+
+      for (const s of snakes){
+        if (s.state === 'alive'){ s.decide(); s.advance(); }
+      }
+    }
+    if (guard >= 64) moveAcc = 0;
+  }
+
+  if (gameState === 'playing' || gameState === 'winner' || gameState === 'gameover'){
+    shrinkAcc += dt;
+    let guard = 0;
+    while (shrinkAcc >= SHRINK_MS && guard++ < 8){
+      shrinkAcc -= SHRINK_MS;
+      for (const s of snakes) s.shrink();
+    }
+    if (guard >= 8) shrinkAcc = 0;
+  }
+
+  if (gameState !== 'gameover'){
+    for (const s of snakes){
+      if (s.state === 'respawning'){
+        s.deathTimer += dt;
+        if (s.deathTimer >= RESPAWN_DELAY) s.spawn();
+      }
+    }
+  }
+
+  if (gameState === 'gameover'){
+    const elapsed = now - gameOverStart;
+    const remaining = Math.max(0, Math.ceil((GAMEOVER_MS - elapsed) / 1000));
+    if (countdownEl.textContent !== String(remaining)){
+      countdownEl.textContent = remaining;
+    }
+    if (elapsed >= GAMEOVER_MS){
+      resetGame();
+    }
+  }
+
+  for (const f of foods){
+    const p = 0.5 + 0.5 * Math.sin(tsec * 7 + f.phase);
+    f.mesh.material.opacity = 0.20 + 0.80 * p;
+    const sc = 0.75 + 0.45 * p;
+    f.mesh.scale.set(sc, sc, 1);
+  }
+
+  for (const s of snakes) s.updateMesh();
+  if (gameState === 'playing' || gameState === 'winner') updateScoreboard();
+
+  renderer.render(scene, camera);
+}
+
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
