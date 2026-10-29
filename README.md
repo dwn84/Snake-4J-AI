@@ -2,7 +2,7 @@
 
 Un juego de culebritas (Snake) donde **4 culebras controladas por IA** compiten automáticamente sobre un tablero de 720 × 1280 píxeles. Cada culebra tiene su propio color, tono y comportamiento, y el objetivo es llegar primero al límite de puntos del nivel seleccionado.
 
-**[▶️ Jugar ahora](https://tu-usuario.github.io/snake-4-jugadores/)**
+**[▶️ Jugar ahora](https://dwn84.github.io/Snake-4J-AI/)**
 
 ---
 
