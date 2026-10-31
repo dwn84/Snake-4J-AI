@@ -8,6 +8,15 @@
             font-family:system-ui,-apple-system,Segoe UI,sans-serif;}
   canvas{display:block;}
 
+  #tensionOverlay{
+    position:fixed;inset:0;pointer-events:none;z-index:5;
+    background:radial-gradient(ellipse at center,
+      transparent 35%, rgba(0,0,0,0.20) 70%, rgba(0,0,0,0.55) 100%);
+    opacity:0;
+    transition:opacity 0.2s ease-out;
+    mix-blend-mode:multiply;
+  }
+
   #scoreboard{
     position:fixed;top:12px;left:50%;transform:translateX(-50%);
     display:flex;gap:26px;z-index:6;
@@ -29,12 +38,13 @@
   #overlay h1{margin:0;font-size:30px;font-weight:600;letter-spacing:.12em}
   #overlay p{margin:0;font-size:14px;color:#666;letter-spacing:.05em}
 
-  #levels{display:flex;gap:18px;margin-top:10px;flex-wrap:wrap;justify-content:center}
+  #levels{display:flex;gap:16px;margin-top:10px;flex-wrap:wrap;justify-content:center;
+          max-width:640px}
   .lvl-btn{
-    padding:16px 30px;font-size:16px;font-weight:700;letter-spacing:.10em;
+    padding:16px 26px;font-size:15px;font-weight:700;letter-spacing:.10em;
     border-radius:12px;border:2px solid #ccc;background:#fff;color:#111;
     cursor:pointer;transition:all .15s;font-family:inherit;
-    min-width:150px;line-height:1.2;
+    min-width:135px;line-height:1.2;
   }
   .lvl-btn small{display:block;font-size:11px;font-weight:500;
     color:#999;letter-spacing:.06em;margin-top:4px}
@@ -51,6 +61,11 @@
   .lvl-btn[data-score="999"]:hover{background:#ff2222;color:#fff;
     box-shadow:0 6px 16px rgba(255,34,34,.3)}
   .lvl-btn[data-score="999"]:hover small{color:rgba(255,255,255,.85)}
+  .lvl-btn[data-score="9999"]{border-color:#9900ff;color:#9900ff;
+    background:linear-gradient(180deg,#fff,#f6efff)}
+  .lvl-btn[data-score="9999"]:hover{background:#9900ff;color:#fff;
+    box-shadow:0 6px 16px rgba(153,0,255,.4)}
+  .lvl-btn[data-score="9999"]:hover small{color:rgba(255,255,255,.85)}
 
   #legend{display:flex;gap:26px;font-size:15px;color:#333;margin-top:14px;
           flex-wrap:wrap;justify-content:center;font-weight:600;letter-spacing:.04em;
@@ -76,6 +91,8 @@
 </head>
 <body>
 
+<div id="tensionOverlay"></div>
+
 <div id="scoreboard">
   <div class="sb-item"><i class="sb-dot" style="background:#000"></i><b id="sc1">0</b></div>
   <div class="sb-item"><i class="sb-dot" style="background:#ff2222"></i><b id="sc2">0</b></div>
@@ -98,6 +115,10 @@
     <button class="lvl-btn" data-score="999">
       EXTENSO
       <small>límite 999 puntos</small>
+    </button>
+    <button class="lvl-btn" data-score="9999">
+      ÉPICO
+      <small>límite 9999 puntos</small>
     </button>
   </div>
   <div id="legend">
@@ -135,19 +156,21 @@ const MARGIN_PX = 80;
 
 const STEP_MS       = 160;
 const MIN_STEP_MS   = 2;
-const SPEED_FACTOR  = 1.1;   // ← boost único al entrar en modo ganador
+const SPEED_FACTOR  = 1.1;
 const SHRINK_MS     = 80;
 
 const START_LEN     = 4;
-const GROW_AMOUNT   = 1;     // ← +1 píxel al tamaño por punto
+const GROW_AMOUNT   = 1;
 const FOOD_SIZE     = 1;
 const MAX_SEG       = BW * BH;
 const RESPAWN_DELAY = 350;
 const BFS_EVERY     = 1;
 
-/* Comida en modo normal: arranca 128, +1 neto por punto, SIN tope/reinicio */
+/* --- Comida: 128 → crece +1 neto por comida → tope 256 → reinicia a 1 --- */
 const INITIAL_FOODS = 128;
-const SPAWN_PER_EAT = 2;     // +2 spawn −1 comido = +1 neto
+const MAX_FOODS     = 256;
+const SPAWN_PER_EAT = 2;
+const RESET_TO      = 1;
 
 let WIN_SCORE        = 999;
 let currentLevelName = 'EXTENSO';
@@ -176,6 +199,13 @@ let gameState     = 'menu';
 let winnerSnake   = null;
 let gameOverStart = 0;
 let currentStepMs = STEP_MS;
+
+let shakeUntil     = 0;
+let shakeIntensity = 0;
+
+let nextBlurAt    = performance.now() + 5000 + Math.random() * 8000;
+let blurTimeoutId = null;
+const tensionOverlay = document.getElementById('tensionOverlay');
 
 /* =========================================================
    AUDIO
@@ -314,6 +344,7 @@ function foodAt(x, y){
 }
 
 function onFoodEaten(f){
+  // Quitar el píxel comido
   const i = foods.indexOf(f);
   if (i >= 0) foods.splice(i, 1);
   scene.remove(f.mesh);
@@ -323,14 +354,28 @@ function onFoodEaten(f){
   }
 
   if (gameState === 'winner'){
-    /* Modo ganador: la comida se DUPLICA por cada punto */
+    /* --- MODO GANADOR: duplicar sin tope (limitado por el tablero) --- */
     const n = foods.length;
     for (let k = 0; k < n; k++){
       if (!spawnFood()) break;
     }
   } else {
-    /* Modo normal: +2 por comer (−1 comido) = +1 neto, SIN reinicio */
+    /* --- MODO NORMAL: +2 por comer (-1 consumido = +1 neto) --- */
     for (let k = 0; k < SPAWN_PER_EAT; k++) spawnFood();
+
+    // ✅ Regla restaurada: al llegar al tope → reiniciar a 1 píxel
+    if (foods.length >= MAX_FOODS){
+      while (foods.length > RESET_TO){
+        const r = foods.pop();
+        scene.remove(r.mesh);
+        r.mesh.material.dispose();
+        if (r.x >= 0 && r.x < BW && r.y >= 0 && r.y < BH){
+          foodGrid[idx(r.x, r.y)] = 0;
+        }
+      }
+      if (foods.length === 0) spawnFood();
+      else relocateFood(foods[0]);
+    }
   }
 }
 
@@ -380,6 +425,141 @@ function computeDistField(){
 }
 
 /* =========================================================
+   EFECTOS VISUALES DE COLISIÓN
+   ========================================================= */
+const RING_GEO     = new THREE.RingGeometry(SCALE * 0.35, SCALE * 0.75, 32);
+const PARTICLE_GEO = new THREE.PlaneGeometry(SCALE * 0.55, SCALE * 0.55);
+const FLASH_GEO    = new THREE.PlaneGeometry(SCALE * 3, SCALE * 3);
+
+const effects = [];
+
+function spawnCollisionEffect(gx, gy, color, intensity = 1){
+  gx = Math.max(0, Math.min(BW - 1, gx));
+  gy = Math.max(0, Math.min(BH - 1, gy));
+
+  const wx = (gx + 0.5) * SCALE;
+  const wy = (gy + 0.5) * SCALE;
+
+  const ringMat = new THREE.MeshBasicMaterial({
+    color, transparent: true, opacity: 0.9, depthWrite: false,
+    side: THREE.DoubleSide
+  });
+  const ring = new THREE.Mesh(RING_GEO, ringMat);
+  ring.position.set(wx, wy, 3);
+  ring.scale.set(intensity, intensity, 1);
+  scene.add(ring);
+  effects.push({
+    mesh: ring, kind: 'ring', life: 0,
+    maxLife: 480 + 120 * intensity,
+    baseScale: intensity,
+    finalScale: (4 + intensity) * intensity
+  });
+
+  const N = Math.floor(14 * intensity);
+  for (let i = 0; i < N; i++){
+    const pMat = new THREE.MeshBasicMaterial({
+      color, transparent: true, opacity: 1, depthWrite: false
+    });
+    const p = new THREE.Mesh(PARTICLE_GEO, pMat);
+    p.position.set(wx, wy, 3);
+    p.scale.set(intensity, intensity, 1);
+    scene.add(p);
+
+    const angle = (i / N) * Math.PI * 2 + (Math.random() - 0.5) * 0.35;
+    const speed = (8 + Math.random() * 14) * intensity;
+    effects.push({
+      mesh: p, kind: 'particle', life: 0,
+      maxLife: 380 + Math.random() * 260,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      baseScale: intensity
+    });
+  }
+
+  const flashMat = new THREE.MeshBasicMaterial({
+    color: 0xffffff, transparent: true, opacity: 0.85, depthWrite: false
+  });
+  const flash = new THREE.Mesh(FLASH_GEO, flashMat);
+  flash.position.set(wx, wy, 4);
+  flash.scale.set(intensity, intensity, 1);
+  scene.add(flash);
+  effects.push({
+    mesh: flash, kind: 'flash', life: 0,
+    maxLife: 180,
+    baseScale: intensity
+  });
+
+  shakeUntil     = performance.now() + 320 * intensity;
+  shakeIntensity = Math.min(1.4, 0.7 * intensity);
+}
+
+function updateEffects(dt){
+  for (let i = effects.length - 1; i >= 0; i--){
+    const e = effects[i];
+    e.life += dt;
+    const t = e.life / e.maxLife;
+
+    if (t >= 1){
+      scene.remove(e.mesh);
+      e.mesh.material.dispose();
+      effects.splice(i, 1);
+      continue;
+    }
+
+    if (e.kind === 'ring'){
+      const s = e.baseScale + (e.finalScale - e.baseScale) * t;
+      e.mesh.scale.set(s, s, 1);
+      e.mesh.material.opacity = 0.9 * (1 - t);
+    }
+    else if (e.kind === 'particle'){
+      const damp = 1 - t;
+      e.mesh.position.x += e.vx * (dt / 16) * damp;
+      e.mesh.position.y += e.vy * (dt / 16) * damp;
+      e.mesh.material.opacity = 1 - t * t;
+      const s = e.baseScale * (1 - t * 0.55);
+      e.mesh.scale.set(s, s, 1);
+    }
+    else if (e.kind === 'flash'){
+      e.mesh.material.opacity = 0.85 * (1 - t);
+      const s = e.baseScale * (1 + t * 1.6);
+      e.mesh.scale.set(s, s, 1);
+    }
+  }
+}
+
+function clearEffects(){
+  for (const e of effects){
+    scene.remove(e.mesh);
+    e.mesh.material.dispose();
+  }
+  effects.length = 0;
+}
+
+/* =========================================================
+   BLUR ALEATORIO
+   ========================================================= */
+function triggerBlur(amount, duration){
+  const c = renderer.domElement;
+  if (blurTimeoutId) clearTimeout(blurTimeoutId);
+
+  c.style.transition = 'filter 0.15s ease-out';
+  c.style.filter = `blur(${amount.toFixed(1)}px)`;
+
+  tensionOverlay.style.transition = 'opacity 0.2s ease-out';
+  tensionOverlay.style.opacity = '1';
+
+  blurTimeoutId = setTimeout(() => {
+    c.style.transition = `filter ${duration}ms ease-in`;
+    c.style.filter = '';
+
+    tensionOverlay.style.transition = `opacity ${duration}ms ease-in`;
+    tensionOverlay.style.opacity = '0';
+
+    blurTimeoutId = null;
+  }, 150);
+}
+
+/* =========================================================
    CLASE CULEBRA
    ========================================================= */
 const segGeo = new THREE.PlaneGeometry(SCALE, SCALE);
@@ -406,24 +586,21 @@ class Snake {
     this.pendingGrow = 0;
     this.state       = 'respawning';
     this.deathTimer  = 0;
-    this.crashPos    = null;    // ← última posición y dirección del choque
+    this.crashPos    = null;
     this._m          = new THREE.Matrix4();
 
     this.spawn();
   }
 
   spawn(){
-    // Limpiar celdas antiguas
     for (const c of this.cells){
       if (inBounds(c.x, c.y)) grid[idx(c.x, c.y)] = 0;
     }
     this.cells.length = 0;
 
-    // 1) Intentar reaparecer en el MISMO lugar del choque
     if (this.crashPos){
       const cp = this.crashPos;
 
-      // Comprobar que el cuerpo cabe extendido hacia atrás (-cp.dir)
       let bodyFits = true;
       for (let i = 0; i < START_LEN; i++){
         const x = cp.x - cp.dir.x * i;
@@ -433,7 +610,6 @@ class Snake {
         }
       }
 
-      // Buscar dirección segura hacia adelante (sin revertir)
       let forwardDir = null;
       const candidates = [cp.dir];
       for (const d of DIRS){
@@ -462,7 +638,6 @@ class Snake {
       }
     }
 
-    // 2) Fallback: spawn aleatorio
     let hx = BW/2, hy = BH/2, dx = 0, dy = 1;
 
     for (let t = 0; t < 800; t++){
@@ -547,7 +722,7 @@ class Snake {
     const ny = head.y + this.dir.y;
 
     if (!inBounds(nx, ny) || grid[idx(nx, ny)] !== 0){
-      this.die();
+      this.die(nx, ny);
       return;
     }
 
@@ -558,14 +733,12 @@ class Snake {
     if (f){
       this.score++;
 
-      // +1 al tamaño por punto (sin tope en modo ganador)
       if (gameState === 'winner'){
         this.pendingGrow += GROW_AMOUNT;
       } else {
         this.pendingGrow = Math.min(this.pendingGrow + GROW_AMOUNT, 100);
       }
 
-      // Activación de modo ganador → boost único 1.1× de velocidad
       if (gameState === 'playing' && this.score >= WIN_SCORE){
         activateWinnerMode(this);
       }
@@ -581,11 +754,10 @@ class Snake {
     }
   }
 
-  die(){
+  die(collX, collY){
     if (this.state !== 'alive') return;
     this.state = 'dying';
 
-    // Guardar posición del choque para reaparecer allí
     const head = this.cells[0];
     if (head){
       this.crashPos = {
@@ -593,6 +765,13 @@ class Snake {
         dir: { x: this.dir.x, y: this.dir.y }
       };
     }
+
+    const ex = collX !== undefined ? collX : (head ? head.x + this.dir.x : 0);
+    const ey = collY !== undefined ? collY : (head ? head.y + this.dir.y : 0);
+    const intensity = (this === winnerSnake) ? 2.2 : 1;
+    spawnCollisionEffect(ex, ey, this.color, intensity);
+
+    triggerBlur(2 + Math.random() * 2, 350);
 
     if (gameState === 'winner' && this === winnerSnake){
       gameState = 'gameover';
@@ -662,6 +841,8 @@ function resetGame(){
   }
   foods.length = 0;
 
+  clearEffects();
+
   grid.fill(0);
   foodGrid.fill(0);
 
@@ -675,20 +856,25 @@ function resetGame(){
   stepCount     = 0;
   lastT         = performance.now();
 
+  renderer.domElement.style.filter = '';
+  renderer.domElement.style.transform = '';
+  tensionOverlay.style.opacity = '0';
+  if (blurTimeoutId){ clearTimeout(blurTimeoutId); blurTimeoutId = null; }
+  nextBlurAt = performance.now() + 5000 + Math.random() * 8000;
+  shakeUntil = 0;
+
   overlay.style.display = 'flex';
 }
 
 /* =========================================================
-   MODO GANADOR (boost ÚNICO ×1.1)
+   MODO GANADOR
    ========================================================= */
 function activateWinnerMode(snake){
   gameState   = 'winner';
   winnerSnake = snake;
 
-  // Boost único de velocidad al terminar la fase normal
   currentStepMs = Math.max(MIN_STEP_MS, currentStepMs / SPEED_FACTOR);
 
-  // Eliminar rivales
   for (const s of snakes){
     if (s === snake) continue;
     for (const c of s.cells){
@@ -697,6 +883,8 @@ function activateWinnerMode(snake){
     s.cells.length = 0;
     s.state = 'gone';
   }
+
+  triggerBlur(6, 900);
 }
 
 /* =========================================================
@@ -760,6 +948,7 @@ levelBtns.forEach(btn => {
     gameState = 'playing';
     currentStepMs = STEP_MS;
     lastT = performance.now();
+    nextBlurAt = performance.now() + 4000 + Math.random() * 6000;
   });
 });
 
@@ -823,6 +1012,26 @@ function loop(now){
       resetGame();
     }
   }
+
+  if ((gameState === 'playing' || gameState === 'winner') && now >= nextBlurAt){
+    const amount   = 2 + Math.random() * 4;
+    const duration = 500 + Math.random() * 900;
+    triggerBlur(amount, duration);
+
+    const cooldown = (gameState === 'winner') ? 1800 : 4500;
+    nextBlurAt = now + duration + cooldown + Math.random() * 6000;
+  }
+
+  if (now < shakeUntil){
+    const k  = (shakeUntil - now) / 350;
+    const dx = (Math.random() - 0.5) * shakeIntensity * 22 * k;
+    const dy = (Math.random() - 0.5) * shakeIntensity * 22 * k;
+    renderer.domElement.style.transform = `translate(${dx.toFixed(1)}px, ${dy.toFixed(1)}px)`;
+  } else if (renderer.domElement.style.transform){
+    renderer.domElement.style.transform = '';
+  }
+
+  updateEffects(dt);
 
   for (const f of foods){
     const p = 0.5 + 0.5 * Math.sin(tsec * 7 + f.phase);
